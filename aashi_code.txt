@@ -1,0 +1,97 @@
+#include <Wire.h>
+
+const uint8_t smcDeviceNumber = 13;
+
+// Required to allow motors to move.
+// Must be called when controller restarts and after any error.
+void exitSafeStart()
+{
+  Wire.beginTransmission(smcDeviceNumber);
+  Wire.write(0x83); // Exit safe start
+  Wire.endTransmission();
+}
+
+void setMotorSpeed(int16_t speed)
+{
+  uint8_t cmd = 0x85; // Motor forward
+  if (speed < 0)
+  {
+    cmd = 0x86; // Motor reverse
+    speed = -speed;
+  }
+  Wire.beginTransmission(smcDeviceNumber);
+  Wire.write(cmd);
+  Wire.write(speed & 0x1F);
+  Wire.write(speed >> 5 & 0x7F);
+  Wire.endTransmission();
+}
+
+uint16_t currentMeasure()
+{
+  Wire.beginTransmission(smcDeviceNumber);
+  Wire.write(0xA1); // Command: Get variable
+  Wire.write(44);   // Variable ID: Current in mA
+  Wire.endTransmission();
+  Wire.requestFrom(smcDeviceNumber, (uint8_t)2);
+  uint16_t upTime = Wire.read();
+  upTime |= Wire.read() << 8;
+  return upTime;
+}
+
+void setup()
+{
+  Serial.begin(9600);
+
+  Wire.begin();
+  exitSafeStart();
+
+  pinMode(10, INPUT); // 10 = D7
+  digitalWrite(10, LOW);
+  delay(5000);
+
+  setMotorSpeed(1000);
+  delay(700);
+}
+
+void loop()
+{
+
+  // CURRRENT MEASURING - Read the up time from the controller and send it to the serial monitor.
+  uint16_t current = currentMeasure();
+  Serial.print(F("Current: "));
+  Serial.print(current);
+  Serial.println(F(" mA"));
+  delay(200);
+
+  // for toilet paper roll: current <= 1500 on 1000 speed
+  // for potato: current <= 1200 on 1000 speed (1280)
+  // OPEN TO CLOSE _ GRASP
+
+  if (current <= 1400)
+  {
+    // delay(1000);
+    setMotorSpeed(1000);
+    // exitSafeStart(); // for current = 3200mA
+  }
+  else
+  {
+    setMotorSpeed(0);
+    delay(5000);
+    setMotorSpeed(-1000);
+    // delay(1000);
+    delay(300);
+    // CLOSE TO OPEN
+    while (current <= 2100)
+    {
+      // delay(1000);
+      setMotorSpeed(-1000);
+      delay(100);
+      current = currentMeasure();
+      Serial.print(F("Current: "));
+      Serial.print(current);
+      Serial.println(F(" mA"));
+    }
+    setMotorSpeed(0);
+    delay(10000);
+  }
+}
